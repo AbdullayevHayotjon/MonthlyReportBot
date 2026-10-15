@@ -65,3 +65,5 @@ sudo systemctl start monthlyreportbot
 Tokenni almashtirish: `sudo nano /etc/monthlyreportbot/bot.env`, so‘ng faqat monthlyreportbot xizmatini qayta ishga tushiring. `/var/lib/monthlyreportbot` ni o‘chirmang. Zaxira olish: avval faqat botni stop qiling, `sudo /usr/local/sbin/monthlyreportbot-backup`, so‘ng start qiling. Zaxiralar va eski releaselar avtomatik o‘chirilmaydi; disk holatini kuzatib, kerakli nusxalarni qoldiring.
 
 .NET 8 runtime self-contained artefakt ichida keladi; serverdagi boshqa .NET, Node yoki Docker muhitlari o‘zgarmaydi. Xavfsizlik yangilanishlarini olish uchun muntazam yangi build/deploy qiling. `.NET 8` ni kelajakda qo‘llab-quvvatlanadigan yangi LTSga ko‘chirish alohida rejalashtiriladi.
+
+Bot xizmatiga CPUQuota=100% (bitta CPU ekvivalenti), MemoryHigh=512M va MemoryMax=1G qo‘yiladi. Bu faqat monthlyreportbot cgroupiga taalluqli; mavjud front/back containerlarining sozlamalari o‘zgarmaydi.
