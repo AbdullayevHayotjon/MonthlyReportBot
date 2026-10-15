@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+**/storage/
+**/logs/
+.local/
+**/appsettings.Local.json
+*.user
+*.zip
+TestResults/
+artifacts/
+publish/
