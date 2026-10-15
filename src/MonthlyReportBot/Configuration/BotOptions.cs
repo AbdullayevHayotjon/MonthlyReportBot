@@ -14,7 +14,7 @@ public sealed class BotOptions
  public string DefaultTimeZone { get; set; } = "Asia/Tashkent";
  public string OrganizationName { get; set; } = "";
  public string DepartmentName { get; set; } = "";
- public string[] Positions { get; set; } = ["Dasturchi (back-end)", "Dasturchi (front-end)"];
+ public string[] Positions { get; set; } = [];
  public long[] AllowedUserIds { get; set; } = [];
  public DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(DefaultTimeZone)));
 }
