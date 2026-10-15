@@ -14,7 +14,7 @@ Bu bot alohida systemd xizmati sifatida ishlaydi. Nginx, frontend/backend contai
 | `/run/monthlyreportbot/healthy` | Telegramga ulanishdan keyingi worker heartbeat |
 | `monthlyreportbot.service` | Faqat ushbu bot xizmati |
 
-Runtime `monthlyreportbot` tizim foydalanuvchisida ishlaydi. CI SSH kaliti faqat `upload`, `deploy`, `status` buyruqlarini bajaradi. Mavjud SSH parol va boshqa kalitlar o‘zgarmaydi. Deploy foydalanuvchisiga faqat shu xizmatni stop/start qilish, schema holatini olish va shu botni zaxiralash uchun sudo ruxsatlari yoziladi.
+Runtime `monthlyreportbot` tizim foydalanuvchisida ishlaydi. CI SSH kaliti faqat `upload`, `deploy`, `status` buyruqlarini bajaradi. CI uchun `monthlyreportbot-deploy` alohida hisobi yaratiladi; u docker/sudo guruhlariga kirmaydi. Mavjud SSH parol va boshqa kalitlar o‘zgarmaydi. Deploy foydalanuvchisiga faqat shu xizmatni stop/start qilish, schema holatini olish va shu botni zaxiralash uchun sudo ruxsatlari yoziladi.
 
 ## Bir martalik o‘rnatish
 
@@ -36,7 +36,7 @@ Workflow: `.github/workflows/ci-cd.yml`. Push/PR paytida credential scan, shell/
 Repository Actions **Variables**:
 
 - `SSH_HOST` — server IP yoki hostname.
-- `SSH_USER` — deploy hisob nomi.
+- `SSH_USER` — `monthlyreportbot-deploy` alohida CI hisobi.
 - `SSH_PORT` — odatda `22`.
 - `DEPLOY_ENABLED` — dastlab `false`; birinchi o‘rnatish tekshirilgach `true`.
 

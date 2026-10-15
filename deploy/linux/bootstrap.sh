@@ -7,7 +7,11 @@ id "$deploy_user" >/dev/null
 . /etc/os-release
 [[ $ID == ubuntu && $VERSION_ID == 24.04 && $(uname -m) == x86_64 ]] || { echo 'This bootstrap is verified for Ubuntu 24.04 x86_64.';exit 1; }
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-for file in monthlyreportbot.service ssh-command.sh receive.py unpack.py deploy.sh backup.sh schema.sh import-data.py ci-key.pub;do
+operator_home=$(getent passwd "$deploy_user" | cut -d: -f6)
+public_key_file=${2:-"$source_dir/ci-key.pub"}
+[[ -f $public_key_file ]] || { echo "CI public key file missing";exit 1; }
+ci_user=monthlyreportbot-deploy
+for file in monthlyreportbot.service ssh-command.sh receive.py unpack.py deploy.sh backup.sh schema.sh import-data.py;do
   [[ -f $source_dir/$file ]] || { echo "Missing setup file: $file";exit 1; }
 done
 # Do not update shared libraries, install Docker, change Nginx or restart other applications.
@@ -25,9 +29,13 @@ if id monthlyreportbot >/dev/null 2>&1 && [[ ! -f /opt/monthlyreportbot/.managed
 fi
 getent group monthlyreportbot >/dev/null || groupadd --system monthlyreportbot
 if ! id monthlyreportbot >/dev/null 2>&1;then useradd --system --gid monthlyreportbot --home-dir /var/lib/monthlyreportbot --no-create-home --shell /usr/sbin/nologin monthlyreportbot;fi
-usermod -aG monthlyreportbot "$deploy_user"
-install -d -m 2750 -o "$deploy_user" -g monthlyreportbot /opt/monthlyreportbot /opt/monthlyreportbot/releases
-install -d -m 700 -o "$deploy_user" -g monthlyreportbot /opt/monthlyreportbot/incoming
+if ! id "$ci_user" >/dev/null 2>&1;then
+  useradd --system --gid monthlyreportbot --home-dir /var/lib/monthlyreportbot-deploy --create-home --shell /bin/bash "$ci_user"
+fi
+[[ $(getent passwd "$ci_user" | cut -d: -f6) == /var/lib/monthlyreportbot-deploy ]] || { echo 'Unexpected CI account home';exit 1; }
+if id -nG "$ci_user" | tr ' ' '\n' | grep -Ex 'docker|sudo' >/dev/null;then echo 'CI account has unrelated privileges; stopped.';exit 1;fi
+install -d -m 2750 -o "$ci_user" -g monthlyreportbot /opt/monthlyreportbot /opt/monthlyreportbot/releases
+install -d -m 700 -o "$ci_user" -g monthlyreportbot /opt/monthlyreportbot/incoming
 install -d -m 700 -o monthlyreportbot -g monthlyreportbot /var/lib/monthlyreportbot
 install -d -m 700 -o root -g root /etc/monthlyreportbot /var/backups/monthlyreportbot
 touch /opt/monthlyreportbot/.managed-by-monthlyreportbot
@@ -43,7 +51,7 @@ install -m 644 -o root -g root "$source_dir/monthlyreportbot.service" /etc/syste
 sudoers_temp=$(mktemp)
 trap 'rm -f "$sudoers_temp"' EXIT
 cat > "$sudoers_temp" <<EOF
-$deploy_user ALL=(root) NOPASSWD: /usr/bin/systemctl stop monthlyreportbot.service, /usr/bin/systemctl start monthlyreportbot.service, /usr/bin/systemctl reset-failed monthlyreportbot.service, /usr/local/sbin/monthlyreportbot-backup, /usr/local/sbin/monthlyreportbot-schema
+$ci_user ALL=(root) NOPASSWD: /usr/bin/systemctl stop monthlyreportbot.service, /usr/bin/systemctl start monthlyreportbot.service, /usr/bin/systemctl reset-failed monthlyreportbot.service, /usr/local/sbin/monthlyreportbot-backup, /usr/local/sbin/monthlyreportbot-schema
 EOF
 visudo -cf "$sudoers_temp"
 install -m 440 -o root -g root "$sudoers_temp" /etc/sudoers.d/monthlyreportbot
@@ -59,22 +67,31 @@ if [[ -f $source_dir/storage-transfer.tar.gz && ! -e /var/lib/monthlyreportbot/b
   python3 "$source_dir/import-data.py" "$source_dir/storage-transfer.tar.gz"
 fi
 # Scope this CI key to this bot. Password login / other authorized keys stay unchanged.
-operator_home=$(getent passwd "$deploy_user" | cut -d: -f6)
+ci_home=/var/lib/monthlyreportbot-deploy
+install -d -m 700 -o "$ci_user" -g monthlyreportbot "$ci_home/.ssh"
 [[ -d $operator_home/.ssh && ! -L $operator_home/.ssh && ! -L $operator_home/.ssh/authorized_keys ]] || exit 1
-python3 - "$operator_home/.ssh/authorized_keys" "$source_dir/ci-key.pub" <<'PY'
+python3 - "$operator_home/.ssh/authorized_keys" "$public_key_file" "$ci_home/.ssh/authorized_keys" <<'PY'
 import sys
 from pathlib import Path
-path,public=map(Path,sys.argv[1:])
+path,public,ci_path=map(Path,sys.argv[1:])
 parts=public.read_text().split()
 if len(parts)<2 or parts[0]!='ssh-ed25519':raise SystemExit('Invalid public key')
 blob=parts[1]
 lines=path.read_text().splitlines() if path.exists() else []
 lines=[line for line in lines if blob not in line.split()]
-lines.append('restrict,command="/usr/local/libexec/monthlyreportbot-ssh" '+parts[0]+' '+blob+' MonthlyReportBot-CI')
 path.write_text('\n'.join(lines)+'\n')
+ci_lines=ci_path.read_text().splitlines() if ci_path.exists() else []
+ci_lines=[line for line in ci_lines if blob not in line.split()]
+ci_lines.append('restrict,command="/usr/local/libexec/monthlyreportbot-ssh" '+parts[0]+' '+blob+' MonthlyReportBot-CI')
+ci_path.write_text('\n'.join(ci_lines)+'\n')
 PY
 chmod 600 "$operator_home/.ssh/authorized_keys"
 chown "$deploy_user:$(id -gn "$deploy_user")" "$operator_home/.ssh/authorized_keys"
+chmod 600 "$ci_home/.ssh/authorized_keys"
+chown "$ci_user:monthlyreportbot" "$ci_home/.ssh/authorized_keys"
+for metadata in .deployment.lock last-successful-release;do
+  if [[ -f /opt/monthlyreportbot/$metadata ]];then chown "$ci_user:monthlyreportbot" "/opt/monthlyreportbot/$metadata";fi
+done
 systemctl daemon-reload
 systemctl enable monthlyreportbot.service
-echo 'Setup complete. Token stays on server. No existing services were restarted. Bot awaits its first release and data import.'
+echo 'Setup complete. Token stays on server. No existing services were restarted. Dedicated CI account: monthlyreportbot-deploy (no Docker/sudo group).'

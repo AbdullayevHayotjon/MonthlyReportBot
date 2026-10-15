@@ -42,6 +42,7 @@ jobs:
       - name: Create release archive
         run: |
           cp -r ThirdPartyLicenses artifacts/app/
+          cp -r deploy/linux artifacts/app/operator-setup
           tar -czf artifacts/monthlyreportbot-linux-x64.tar.gz -C artifacts/app .
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
