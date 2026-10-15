@@ -23,6 +23,8 @@ var builder=Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 });
 builder.Configuration.Sources.Clear();
 builder.Configuration.AddJsonFile("appsettings.json",optional:false,reloadOnChange:false);
+builder.Configuration.AddJsonFile("appsettings.Local.json",optional:true,reloadOnChange:false);
+builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddWindowsService(o=>o.ServiceName="MonthlyReportBot");
 builder.Services.AddOptions<BotOptions>().Bind(builder.Configuration.GetSection("Bot"))
  .Validate(o=>args.Contains("--migrate")||System.Text.RegularExpressions.Regex.IsMatch(o.Token,@"^\d+:[A-Za-z0-9_-]{30,}$"),"appsettings.json ichidagi Bot:Token qiymatini tekshiring.")
@@ -32,6 +34,16 @@ builder.Services.AddOptions<BotOptions>().Bind(builder.Configuration.GetSection(
  .Validate(o=>!string.IsNullOrWhiteSpace(o.OrganizationName)&&!string.IsNullOrWhiteSpace(o.DepartmentName),"Tashkilot/bo‘lim bo‘sh.")
  .Validate(o=>{try{TimeZoneInfo.FindSystemTimeZoneById(o.DefaultTimeZone);return true;}catch{return false;}},"Vaqt mintaqasi noto‘g‘ri.").ValidateOnStart();
 var settings=builder.Configuration.GetSection("Bot").Get<BotOptions>()??new();
+if(args.Contains("--health"))
+{
+ Environment.ExitCode=MonthlyReportBot.Helpers.WorkerHealth.IsHealthy(settings)?0:1;
+ return;
+}
+if(args.Contains("--verify-package"))
+{
+ MonthlyReportBot.Helpers.PackageVerifier.Verify(settings);
+ return;
+}
 Directory.CreateDirectory(settings.StorageRoot);
 var sqlite=new SqliteConnectionStringBuilder(settings.ConnectionString);
 if(sqlite.DataSource!=":memory:"){sqlite.DataSource=Path.GetFullPath(sqlite.DataSource);Directory.CreateDirectory(Path.GetDirectoryName(sqlite.DataSource)!);}
@@ -39,6 +51,7 @@ builder.Services.AddDbContext<AppDbContext>(o=>o.UseSqlite(sqlite.ToString()));
 builder.Services.AddSingleton<ITelegramBotClient>(_=>new TelegramBotClient(settings.Token));
 builder.Services.AddScoped<UserService>();builder.Services.AddScoped<TaskService>();builder.Services.AddScoped<ImageService>();builder.Services.AddScoped<FileChanges>();builder.Services.AddScoped<WordReportGenerator>();builder.Services.AddScoped<ReportService>();builder.Services.AddScoped<BotHandler>();
 builder.Services.AddHostedService<PollingWorker>();
+builder.Services.AddSingleton<WorkerHealth>();
 builder.Logging.ClearProviders();builder.Logging.AddConsole();builder.Logging.AddProvider(new PrivateFileLoggerProvider(Path.Combine(settings.StorageRoot,"logs")));
 using var host=builder.Build();
 try

@@ -3,30 +3,42 @@ using MonthlyReportBot.Configuration;
 using MonthlyReportBot.Data;
 using MonthlyReportBot.Data.Entities;
 using MonthlyReportBot.Handlers;
+using MonthlyReportBot.Helpers;
 using MonthlyReportBot.Services.Images;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 namespace MonthlyReportBot.Services.Telegram;
-public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient bot,ILogger<PollingWorker> log,IHostApplicationLifetime lifetime) : BackgroundService
+public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient bot,ILogger<PollingWorker> log,IHostApplicationLifetime lifetime,WorkerHealth health) : BackgroundService
 {
  protected override async Task ExecuteAsync(CancellationToken ct)
  {
   int offset;
   using(var scope=scopes.CreateScope()){var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();offset=(await db.PollCursors.SingleAsync(ct)).NextUpdateId;}
   var delay=2;
+  bool connected=false;
+  health.Clear();
   log.LogInformation("Long polling ishga tushdi.");
   while(!ct.IsCancellationRequested)
   {
    try
    {
+    if(!connected)
+    {
+     await bot.GetMe(ct);
+     var webhook=await bot.GetWebhookInfo(ct);
+     if(!string.IsNullOrEmpty(webhook.Url))
+     {log.LogCritical("Webhook sozlangan. Long polling uchun uni alohida olib tashlang.");Environment.ExitCode=1;lifetime.StopApplication();return;}
+     connected=true;health.Touch();
+    }
     var updates=await bot.GetUpdates(offset,timeout:30,allowedUpdates:[UpdateType.Message,UpdateType.CallbackQuery],cancellationToken:ct);
+    health.Touch();
     foreach(var update in updates.OrderBy(x=>x.Id))
     {
      // A global ordered queue also serializes each user's messages and album items.
      // The cursor and domain changes commit atomically, so redeliveries do not duplicate records.
-     await ProcessUpdate(update,ct);offset=update.Id+1;
+     await ProcessUpdate(update,ct);offset=update.Id+1;health.Touch();
     }
     delay=2;
    }
@@ -39,6 +51,7 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
    {log.LogWarning("Polling qayta urinadi. Xato turi: {Type}; kutish: {Delay}s",e.GetType().Name,delay);await Task.Delay(TimeSpan.FromSeconds(delay),ct);delay=Math.Min(delay*2,60);}
   }
  }
+ public override async Task StopAsync(CancellationToken ct){await base.StopAsync(ct);health.Clear();}
  async Task ProcessUpdate(Update update,CancellationToken ct)
  {
   try
