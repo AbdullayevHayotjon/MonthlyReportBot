@@ -16,14 +16,16 @@ using Telegram.Bot;
 
 // Resolve all relative data paths against the executable, including Windows service runs.
 Directory.SetCurrentDirectory(AppContext.BaseDirectory);
-var builder=Host.CreateApplicationBuilder(args);
-builder.Configuration.AddUserSecrets<Program>(optional:true);
-var privateFile=Environment.GetEnvironmentVariable("MONTHLYREPORTBOT_SECRETS_FILE");
-if(!string.IsNullOrWhiteSpace(privateFile))builder.Configuration.AddJsonFile(privateFile,optional:false,reloadOnChange:false);
-builder.Configuration.AddEnvironmentVariables();
+var builder=Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+{
+ Args=args,
+ ContentRootPath=AppContext.BaseDirectory
+});
+builder.Configuration.Sources.Clear();
+builder.Configuration.AddJsonFile("appsettings.json",optional:false,reloadOnChange:false);
 builder.Services.AddWindowsService(o=>o.ServiceName="MonthlyReportBot");
 builder.Services.AddOptions<BotOptions>().Bind(builder.Configuration.GetSection("Bot"))
- .Validate(o=>args.Contains("--migrate")||System.Text.RegularExpressions.Regex.IsMatch(o.Token,@"^\d+:[A-Za-z0-9_-]{30,}$"),"Bot tokeni topilmadi. Maxfiy sozlamani tekshiring.")
+ .Validate(o=>args.Contains("--migrate")||System.Text.RegularExpressions.Regex.IsMatch(o.Token,@"^\d+:[A-Za-z0-9_-]{30,}$"),"appsettings.json ichidagi Bot:Token qiymatini tekshiring.")
  .Validate(o=>File.Exists(o.TemplatePath),"Word shablon topilmadi.")
  .Validate(o=>o.MaxImageBytes>0&&o.MaxImageBytes<=20*1024*1024&&o.MaxImagesPerTask>0&&o.MaxReportImages>0&&o.MaxReportTasks>0&&o.MaxImagePixels is >0 and <=100_000_000&&o.MaxReportBytes is >1048576 and <=49*1024*1024,"Limitlar noto‘g‘ri.")
  .Validate(o=>o.Positions.Length>0&&o.Positions.All(p=>p.Length is >0 and <=100),"Lavozimlar ro‘yxati noto‘g‘ri.")
@@ -75,4 +77,3 @@ catch(OptionsValidationException ex)
 }
 catch(IOException){Console.Error.WriteLine("Bot nusxasi allaqachon ishlayapti yoki storage fayliga kirish imkoni yo‘q.");Environment.ExitCode=1;}
 catch(Exception ex){Console.Error.WriteLine($"Ishga tushirish xatosi: {ex.GetType().Name}. Sozlamalar, token va storage huquqlarini tekshiring.");Environment.ExitCode=1;}
-public partial class Program;

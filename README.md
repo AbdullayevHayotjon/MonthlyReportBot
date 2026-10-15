@@ -15,7 +15,7 @@ Bot oynasida **Ctrl+C** bosing. Qayta ishlatish uchun **Start.cmd** ni yana ochi
 
 ## Maxfiylik va saqlash
 
-Token ushbu Windows hisobingizning **user-secrets** omborida. Source va tayyor build ichida haqiqiy token yo‘q. Tokenni almashtirish kerak bo‘lsa **Set-Token.ps1** ni PowerShell bilan ishga tushiring. Boshqa Windows hisobida tokenni qayta sozlash kerak.
+Token **publish/appsettings.json** ichidagi **Bot → Token** maydonida. Bot tayyor dastur ishga tushganda shu fayldan o‘qiydi. Kodni Visual Studio orqali ishlatish uchun token **src/MonthlyReportBot/appsettings.json** fayliga ham yozilgan. Tokenni almashtirsangiz ikkala nusxani yangilang. Alohida secret ombori yoki token kiritish skripti kerak emas. Bu fayllarni ulashsangiz token ham birga ketadi.
 
 Ishlar va profillar: **publish/storage/bot.db**. Rasmlar: **publish/storage/images**. Loglar: **publish/storage/logs**. **storage papkasini o‘chirmang** — unda kiritgan ma’lumotlaringiz saqlanadi. Yangi hisobotlar faqat tegishli foydalanuvchining shaxsiy Telegram chatiga yuboriladi. Guruhlarda bot ma’lumot ko‘rsatmaydi.
 
@@ -28,7 +28,6 @@ Shaxsiy foydalanish uchun `publish/appsettings.json` ichidagi `Bot.AllowedUserId
 - **src / MonthlyReportBot.sln / global.json** — dastur manba kodi va Visual Studio loyihasi; keyin kodni o‘zgartirish uchun qoldirilgan. Test loyihasi yo‘q.
 - **src/MonthlyReportBot/Data/Migrations** — birinchi ishga tushishda bazani yaratish uchun kerak; test fayllari emas.
 - **ThirdPartyLicenses** — ishlatilgan kutubxonalarning litsenziya matnlari.
-- **Set-Token.ps1** — tokenni almashtirish yordamchisi.
 - **Backup.ps1** — botni to‘xtatgandan keyin ma’lumotlarni zaxiralash yordamchisi.
 
 ZIP va `.sha256` ishlash uchun kerak emas. `.sha256` faqat ZIP arxivi buzilmaganini tekshirishga xizmat qilgan.
