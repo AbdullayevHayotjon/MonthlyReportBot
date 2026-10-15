@@ -7,6 +7,7 @@ using MonthlyReportBot.Data.Entities;
 using MonthlyReportBot.Services.Images;
 using MonthlyReportBot.Services.Reports;
 using SkiaSharp;
+using MonthlyReportBot.Models;
 namespace MonthlyReportBot.Helpers;
 // Offline verification of native dependencies and DOCX generation in the actual published package.
 public static class PackageVerifier
@@ -16,6 +17,11 @@ public static class PackageVerifier
   var temp=Path.Combine(Path.GetTempPath(),"MonthlyReportBot-verify-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(temp);
   try
   {
+   foreach(var (first,last,expected) in new[]{("Shoxijahon","Xalimov","Sh.Xalimov"),("shoxijahon","Xalimov","Sh.Xalimov"),("SHOXIJAHON","Xalimov","Sh.Xalimov"),("Chori","Aliyev","Ch.Aliyev"),("Sardor","Xalimov","S.Xalimov"),("Hayotjon","Abdullayev","H.Abdullayev")})
+   {
+    if(Names.Short(first,last)!=expected||Names.Short(first,last,true)!=expected.Replace(".",". "))
+     throw new InvalidDataException("Uzbek name initial verification failed");
+   }
    var o=new BotOptions{StorageRoot=temp,TemplatePath=Path.GetFullPath(source.TemplatePath),OrganizationName=source.OrganizationName,DepartmentName=source.DepartmentName};
    using(var db=new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={Path.Combine(temp,"verify.db")}").Options))
    {db.Database.Migrate();if(db.Users.Any())throw new InvalidDataException("Verification database must be empty");}

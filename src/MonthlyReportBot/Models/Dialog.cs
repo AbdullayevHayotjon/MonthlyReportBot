@@ -24,7 +24,14 @@ public static class Dates
 }
 public static class Names
 {
- public static string Short(string first,string last,bool spaced=false) => $"{StringInfo.GetNextTextElement(first)}.{(spaced ? " " : "")}{last}";
+ public static string Short(string first,string last,bool spaced=false)
+ {
+  first=first.Trim();
+  // Uzbek Sh and Ch initials retain both letters in report titles and signatures.
+  var initial=first.StartsWith("Sh",StringComparison.OrdinalIgnoreCase)?"Sh":
+   first.StartsWith("Ch",StringComparison.OrdinalIgnoreCase)?"Ch":StringInfo.GetNextTextElement(first).ToUpperInvariant();
+  return $"{initial}.{(spaced ? " " : "")}{last}";
+ }
  public static string Safe(string value) => string.Concat(value.Where(c=>char.IsLetterOrDigit(c)||c=='-'||c=='_')).Truncate(60);
  public static string Truncate(this string s,int n) => s.Length<=n?s:s[..n];
 }
