@@ -1,45 +1,41 @@
-# Botni ishlatish
+# MonthlyReportBot
 
-1. Shu papkadagi **Start.cmd** faylini ikki marta bosing.
-2. Ochilgan oynani ochiq qoldiring. Bot shu oyna ishlayotgan paytda xizmat qiladi.
-3. Telegramda **@taskreportuz_bot** ni oching va **/start** yuboring.
-4. Ism, familiya va lavozimingizni kiriting.
-5. **➕ Task qo‘shish** orqali sana, ish matni va ixtiyoriy rasmlarni yuboring, keyin **✅ Saqlash** bosing.
-6. **📄 Hisobot yaratish** orqali yil/oy yoki sana oralig‘ini tanlang va **✅ Word yaratish** ni bosing.
+Telegram orqali task, rasm va oylik Word hisobotlari. .NET 8 Worker Service, EF Core SQLite va Open XML SDK. Foydalanuvchilar Telegram ID bo‘yicha ajratiladi; bot faqat shaxsiy chatda ishlaydi.
 
-Taskni o‘zgartirish/o‘chirish va rasmlarni boshqarish: **📋 Tasklarim**. Amalni bekor qilish: **/cancel**. Yordam: **/help**.
+## Server
 
-## To‘xtatish va qayta ishga tushirish
+Ubuntu 24.04 x64 uchun to‘liq o‘rnatish, CI/CD, ma’lumotlarni ko‘chirish va rollback tartibi: [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Bot oynasida **Ctrl+C** bosing. Qayta ishlatish uchun **Start.cmd** ni yana oching. Bir vaqtning o‘zida bitta nusxa ishlasin. Kompyuter o‘chsa, uyquga ketsa yoki internet uzilsa bot javob bera olmaydi.
+GitHub Actions har bir push/PRda tokensiz build va native SQLite/PNG/Word tekshiruvlarini bajaradi. `master`/`main` yangilanishi serverga SSH orqali deploy qilinadi (`DEPLOY_ENABLED=true` bo‘lganda). Baza va rasmlar release’dan alohida saqlanadi. Telegram uchun kiruvchi port va domen talab qilinmaydi.
 
-## Maxfiylik va saqlash
+## Mahalliy ishlatish
 
-Token **publish/appsettings.json** ichidagi **Bot → Token** maydonida. Bot tayyor dastur ishga tushganda shu fayldan o‘qiydi. Kodni Visual Studio orqali ishlatish uchun token **src/MonthlyReportBot/appsettings.json** fayliga ham yozilgan. Tokenni almashtirsangiz ikkala nusxani yangilang. Alohida secret ombori yoki token kiritish skripti kerak emas. Bu fayllarni ulashsangiz token ham birga ketadi.
+`src/MonthlyReportBot/appsettings.json` public sozlamalar shabloni: haqiqiy token repositoryga yozilmaydi. Windowsda avval tayyorlangan `publish/appsettings.json` Gitdan tashqarida turadi. Yangi mahalliy build uchun `src/MonthlyReportBot/appsettings.Local.json` yarating:
 
-Ishlar va profillar: **publish/storage/bot.db**. Rasmlar: **publish/storage/images**. Loglar: **publish/storage/logs**. **storage papkasini o‘chirmang** — unda kiritgan ma’lumotlaringiz saqlanadi. Yangi hisobotlar faqat tegishli foydalanuvchining shaxsiy Telegram chatiga yuboriladi. Guruhlarda bot ma’lumot ko‘rsatmaydi.
-
-Shaxsiy foydalanish uchun `publish/appsettings.json` ichidagi `Bot.AllowedUserIds` ro‘yxatiga faqat o‘z Telegram IDingizni kiriting. IDni botdagi **/id** buyrug‘i bilan olasiz. Ro‘yxat bo‘sh bo‘lsa boshqa xodimlar ham o‘z alohida profilini ochishi mumkin; ular sizning tasklaringizni ko‘rmaydi. Sozlamani o‘zgartirgach botni qayta ishga tushiring.
-
-## Qaysi fayllar kerak?
-
-- **Start.cmd / Start.ps1** — oddiy ishga tushirish.
-- **publish** — tayyor dastur, kutubxonalar, Word shabloni va ishchi ma’lumotlar. Ichidagi DLL fayllarni o‘chirmang.
-- **src / MonthlyReportBot.sln / global.json** — dastur manba kodi va Visual Studio loyihasi; keyin kodni o‘zgartirish uchun qoldirilgan. Test loyihasi yo‘q.
-- **src/MonthlyReportBot/Data/Migrations** — birinchi ishga tushishda bazani yaratish uchun kerak; test fayllari emas.
-- **ThirdPartyLicenses** — ishlatilgan kutubxonalarning litsenziya matnlari.
-- **Backup.ps1** — botni to‘xtatgandan keyin ma’lumotlarni zaxiralash yordamchisi.
-
-ZIP va `.sha256` ishlash uchun kerak emas. `.sha256` faqat ZIP arxivi buzilmaganini tekshirishga xizmat qilgan.
-
-## Kodni o‘zgartirgandan keyin
-
-Avval botni to‘xtating. Solutionni Visual Studio 2022 orqali ochish mumkin. PowerShellda shu papkadan tayyor buildni yangilash:
-
-```powershell
-dotnet publish src/MonthlyReportBot/MonthlyReportBot.csproj -c Release -r win-x64 --self-contained false -o publish
+```json
+{
+  "Bot": {
+    "Token": ""
+  }
+}
 ```
 
-`publish/storage` saqlanib qoladi; yangilashdan oldin zaxira oling. Bazaga migratsiyalar dastur ishga tushganda avtomatik qo‘llanadi. `Start.ps1 -Check` token va Telegram ulanishini tekshiradi. Alohida test va EF CLI vositalari oddiy ishlatish uchun talab qilinmaydi.
+Tokenni faqat shu Gitga kirmaydigan faylga kiriting yoki `Bot__Token` muhit o‘zgaruvchisidan foydalaning. Serverda token `/etc/monthlyreportbot/bot.env` orqali beriladi. Sozlamalar ustuvorligi: `appsettings.json` → `appsettings.Local.json` → environment variables. `user-secrets` talab qilinmaydi.
 
-Word shablon tuzilishi tekshirilgan. Bu muhitda sahifa render vositasi mavjud bo‘lmagani uchun hujjatning chop etish ko‘rinishi vizual tasdiqlanmagan.
+```powershell
+dotnet run --project src/MonthlyReportBot
+```
+
+Yoki mavjud Windows build uchun `Start.cmd`. Oyna ochiq turishi kerak. To‘xtatish: Ctrl+C. Bir token bilan mahalliy va server botini bir vaqtda ishlatmang.
+
+## Telegram menyusi
+
+`/start`: profil. **Task qo‘shish**: sana → matn → ixtiyoriy rasmlar → Saqlash. **Tasklarim**: ko‘rish/tahrirlash/o‘chirish va rasmlar tartibi. **Hisobot yaratish**: yil/oy yoki inclusive sana oralig‘i → tasdiq → Word. `/cancel`, `/menu`, `/help`, `/tasks`, `/report`, `/id` mavjud.
+
+`Positions` faqat konfiguratsiyadan olinadi. Rasm photo bo‘lsa eng katta variant, document bo‘lsa original PNG/JPEG olinadi. Profil, task, rasm yo‘llari va hisobot davrlari SQLite’da, haqiqiy rasmlar diskda. Tayyor DOCX xotirada yaratiladi va Telegramga yuboriladi.
+
+## Ma’lumotlar
+
+Windows tayyor build: `publish/storage`. Ubuntu: `/var/lib/monthlyreportbot`. SQLite bazasi bilan birga rasmlarni ham saqlang. Ishlayotgan bazaning `-wal` / `-shm` fayllarini o‘chirmang. Zaxira/transferdan oldin aynan shu botni to‘xtating.
+
+Word shabloni `Templates/MonthlyReportTemplate.docx`. Asl namuna kontenti tozalangan nusxa ishlatiladi; numbering, jadval, font va sahifa parametrlari saqlanadi. Har bir natija Open XML validatsiyasidan o‘tadi. Sahifalarning Word/LibreOffice render ko‘rinishi ushbu Windows muhitida vizual tasdiqlanmagan.

@@ -1,0 +1,93 @@
+name: Build and deploy MonthlyReportBot
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: monthlyreportbot-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.x
+      - name: Scan current source for credentials
+        run: python3 scripts/check-secrets.py
+      - name: Check deployment scripts
+        run: |
+          for script in deploy/linux/*.sh; do bash -n "$script"; done
+          python3 -m py_compile deploy/linux/receive.py deploy/linux/unpack.py scripts/check-secrets.py
+      - name: Build Ubuntu x64 package
+        run: dotnet publish src/MonthlyReportBot/MonthlyReportBot.csproj -c Release -r linux-x64 --self-contained true -p:UseAppHost=true -p:DebugType=None -p:DebugSymbols=false -o artifacts/app
+      - name: Verify native SQLite, PNG decoding and Word output offline
+        run: artifacts/app/MonthlyReportBot --verify-package
+      - name: Verify artifact has no token or local configuration
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('artifacts/app')
+          assert not json.loads((p/'appsettings.json').read_text())['Bot']['Token']
+          assert not (p/'appsettings.Local.json').exists()
+          assert not (p/'storage').exists()
+          PY
+      - name: Create release archive
+        run: |
+          cp -r ThirdPartyLicenses artifacts/app/
+          cp -r deploy/linux artifacts/app/operator-setup
+          tar -czf artifacts/monthlyreportbot-linux-x64.tar.gz -C artifacts/app .
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: monthlyreportbot-linux-x64
+          path: artifacts/monthlyreportbot-linux-x64.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+  deploy:
+    needs: build
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    concurrency:
+      group: monthlyreportbot-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: monthlyreportbot-linux-x64
+          path: release
+      - name: Upload and activate verified release
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+          RELEASE_ID: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ $SSH_HOST =~ ^[a-zA-Z0-9.:-]+$ && $SSH_USER =~ ^[a-z_][a-z0-9_-]*$ && $SSH_PORT =~ ^[0-9]+$ ]]
+          [[ -n $SSH_PRIVATE_KEY && -n $SSH_KNOWN_HOSTS ]]
+          install -d -m 700 "$RUNNER_TEMP/bot-ssh"
+          trap 'rm -f "$RUNNER_TEMP/bot-ssh/key" "$RUNNER_TEMP/bot-ssh/known_hosts"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/bot-ssh/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/bot-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/bot-ssh/key" "$RUNNER_TEMP/bot-ssh/known_hosts"
+          archive=release/monthlyreportbot-linux-x64.tar.gz
+          checksum=$(sha256sum "$archive" | cut -d' ' -f1)
+          options=(-i "$RUNNER_TEMP/bot-ssh/key" -p "$SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bot-ssh/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          ssh "${options[@]}" "$SSH_USER@$SSH_HOST" "upload $RELEASE_ID $checksum" < "$archive"
+          ssh "${options[@]}" "$SSH_USER@$SSH_HOST" "deploy $RELEASE_ID $checksum"

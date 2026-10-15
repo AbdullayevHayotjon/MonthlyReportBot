@@ -5,6 +5,7 @@ public sealed class BotOptions
  public string ConnectionString { get; set; } = "Data Source=storage/bot.db";
  public string TemplatePath { get; set; } = "Templates/MonthlyReportTemplate.docx";
  public string StorageRoot { get; set; } = "storage";
+ public string HealthFile { get; set; } = "";
  public long MaxImageBytes { get; set; } = 10 * 1024 * 1024;
  public int MaxImagesPerTask { get; set; } = 50;
  public int MaxReportImages { get; set; } = 200;
