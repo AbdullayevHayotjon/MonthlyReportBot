@@ -19,6 +19,7 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
   int offset;
   using(var scope=scopes.CreateScope()){var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();offset=(await db.PollCursors.SingleAsync(ct)).NextUpdateId;}
   var delay=2;
+  bool recovering=false;
   bool connected=false;
   health.Clear();
   log.LogInformation("Long polling ishga tushdi.");
@@ -40,9 +41,10 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
     stage="getUpdates";
     // Bound each long poll separately; document uploads keep their existing timeout.
     using var pollTimeout=CancellationTokenSource.CreateLinkedTokenSource(ct);
-    pollTimeout.CancelAfter(TimeSpan.FromSeconds(45));
-    var updates=await bot.GetUpdates(offset,timeout:30,allowedUpdates:[UpdateType.Message,UpdateType.CallbackQuery],cancellationToken:pollTimeout.Token);
+    pollTimeout.CancelAfter(TimeSpan.FromSeconds(25));
+    var updates=await bot.GetUpdates(offset,timeout:10,allowedUpdates:[UpdateType.Message,UpdateType.CallbackQuery],cancellationToken:pollTimeout.Token);
     health.Touch();
+    if(recovering){log.LogInformation("Telegram polling aloqasi tiklandi.");recovering=false;}
     foreach(var update in updates.OrderBy(x=>x.Id))
     {
      // A global ordered queue also serializes each user's messages and album items.
@@ -56,9 +58,9 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
    catch(ApiRequestException e)when(e.ErrorCode is 401 or 409)
    {log.LogCritical("Telegram ruxsati yoki polling to‘qnashuvi. Kod: {Code}. Token va boshqa bot nusxasini tekshiring.",e.ErrorCode);Environment.ExitCode=1;lifetime.StopApplication();return;}
    catch(ApiRequestException e)when(e.ErrorCode==429)
-   {log.LogWarning("Telegram rate limit; stage: {Stage}; retry: {Retry}s",stage,e.Parameters?.RetryAfter??10);await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(e.Parameters?.RetryAfter??10,1,60)),ct);}
+   {recovering=true;log.LogWarning("Telegram rate limit; stage: {Stage}; retry: {Retry}s",stage,e.Parameters?.RetryAfter??10);await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(e.Parameters?.RetryAfter??10,1,60)),ct);}
    catch(Exception e)
-   {log.LogWarning("Polling qayta urinadi. Stage: {Stage}; update: {Update}; elapsed: {Elapsed}s; cause: {Cause}; kutish: {Delay}s",stage,updateId,Math.Round(elapsed.Elapsed.TotalSeconds,1),FailureCode(e),delay);await Task.Delay(TimeSpan.FromSeconds(delay),ct);delay=Math.Min(delay*2,60);}
+   {recovering=true;log.LogWarning("Polling qayta urinadi. Stage: {Stage}; update: {Update}; elapsed: {Elapsed}s; cause: {Cause}; kutish: {Delay}s",stage,updateId,Math.Round(elapsed.Elapsed.TotalSeconds,1),FailureCode(e),delay);await Task.Delay(TimeSpan.FromSeconds(delay),ct);delay=Math.Min(delay*2,60);}
   }
  }
  // Log codes/types only: exception messages and URLs may contain the bot token.

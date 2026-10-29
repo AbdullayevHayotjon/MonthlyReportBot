@@ -48,7 +48,14 @@ Directory.CreateDirectory(settings.StorageRoot);
 var sqlite=new SqliteConnectionStringBuilder(settings.ConnectionString);
 if(sqlite.DataSource!=":memory:"){sqlite.DataSource=Path.GetFullPath(sqlite.DataSource);Directory.CreateDirectory(Path.GetDirectoryName(sqlite.DataSource)!);}
 builder.Services.AddDbContext<AppDbContext>(o=>o.UseSqlite(sqlite.ToString()));
-builder.Services.AddSingleton<ITelegramBotClient>(_=>new TelegramBotClient(settings.Token));
+// Own the client through DI so the handler and pooled connections are disposed on shutdown.
+builder.Services.AddSingleton<HttpClient>(_=>new HttpClient(new SocketsHttpHandler
+{
+ ConnectTimeout=TimeSpan.FromSeconds(10),
+ PooledConnectionLifetime=TimeSpan.FromMinutes(2),
+ PooledConnectionIdleTimeout=TimeSpan.FromMinutes(1)
+}));
+builder.Services.AddSingleton<ITelegramBotClient>(services=>new TelegramBotClient(settings.Token,services.GetRequiredService<HttpClient>()));
 builder.Services.AddScoped<UserService>();builder.Services.AddScoped<TaskService>();builder.Services.AddScoped<ImageService>();builder.Services.AddScoped<FileChanges>();builder.Services.AddScoped<WordReportGenerator>();builder.Services.AddScoped<ReportService>();builder.Services.AddScoped<BotHandler>();
 builder.Services.AddHostedService<PollingWorker>();
 builder.Services.AddSingleton<WorkerHealth>();
