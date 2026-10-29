@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
 using MonthlyReportBot.Configuration;
 using MonthlyReportBot.Data;
@@ -22,6 +24,9 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
   log.LogInformation("Long polling ishga tushdi.");
   while(!ct.IsCancellationRequested)
   {
+   var stage="connect";
+   int? updateId=null;
+   var elapsed=Stopwatch.StartNew();
    try
    {
     if(!connected)
@@ -32,12 +37,17 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
      {log.LogCritical("Webhook sozlangan. Long polling uchun uni alohida olib tashlang.");Environment.ExitCode=1;lifetime.StopApplication();return;}
      connected=true;health.Touch();
     }
-    var updates=await bot.GetUpdates(offset,timeout:30,allowedUpdates:[UpdateType.Message,UpdateType.CallbackQuery],cancellationToken:ct);
+    stage="getUpdates";
+    // Bound each long poll separately; document uploads keep their existing timeout.
+    using var pollTimeout=CancellationTokenSource.CreateLinkedTokenSource(ct);
+    pollTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+    var updates=await bot.GetUpdates(offset,timeout:30,allowedUpdates:[UpdateType.Message,UpdateType.CallbackQuery],cancellationToken:pollTimeout.Token);
     health.Touch();
     foreach(var update in updates.OrderBy(x=>x.Id))
     {
      // A global ordered queue also serializes each user's messages and album items.
      // The cursor and domain changes commit atomically, so redeliveries do not duplicate records.
+     stage="processUpdate";updateId=update.Id;elapsed.Restart();
      await ProcessUpdate(update,ct);offset=update.Id+1;health.Touch();
     }
     delay=2;
@@ -46,10 +56,26 @@ public sealed class PollingWorker(IServiceScopeFactory scopes,ITelegramBotClient
    catch(ApiRequestException e)when(e.ErrorCode is 401 or 409)
    {log.LogCritical("Telegram ruxsati yoki polling to‘qnashuvi. Kod: {Code}. Token va boshqa bot nusxasini tekshiring.",e.ErrorCode);Environment.ExitCode=1;lifetime.StopApplication();return;}
    catch(ApiRequestException e)when(e.ErrorCode==429)
-   {await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(e.Parameters?.RetryAfter??10,1,60)),ct);}
+   {log.LogWarning("Telegram rate limit; stage: {Stage}; retry: {Retry}s",stage,e.Parameters?.RetryAfter??10);await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(e.Parameters?.RetryAfter??10,1,60)),ct);}
    catch(Exception e)
-   {log.LogWarning("Polling qayta urinadi. Xato turi: {Type}; kutish: {Delay}s",e.GetType().Name,delay);await Task.Delay(TimeSpan.FromSeconds(delay),ct);delay=Math.Min(delay*2,60);}
+   {log.LogWarning("Polling qayta urinadi. Stage: {Stage}; update: {Update}; elapsed: {Elapsed}s; cause: {Cause}; kutish: {Delay}s",stage,updateId,Math.Round(elapsed.Elapsed.TotalSeconds,1),FailureCode(e),delay);await Task.Delay(TimeSpan.FromSeconds(delay),ct);delay=Math.Min(delay*2,60);}
   }
+ }
+ // Log codes/types only: exception messages and URLs may contain the bot token.
+ static string FailureCode(Exception error)
+ {
+  var codes=new List<string>();
+  for(Exception? e=error;e!=null;e=e.InnerException)
+   codes.Add(e switch
+   {
+    ApiRequestException api=>$"Telegram:{api.ErrorCode}",
+    RequestException request=>$"Request:{request.HttpStatusCode}",
+    SocketException socket=>$"Socket:{socket.SocketErrorCode}",
+    HttpRequestException http=>$"Http:{http.StatusCode}",
+    OperationCanceledException=>"CancelledOrTimeout",
+    _=>e.GetType().Name
+   });
+  return string.Join(" > ",codes);
  }
  public override async Task StopAsync(CancellationToken ct){await base.StopAsync(ct);health.Clear();}
  async Task ProcessUpdate(Update update,CancellationToken ct)
