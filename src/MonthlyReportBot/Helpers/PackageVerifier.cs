@@ -1,3 +1,5 @@
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -33,6 +35,22 @@ public static class PackageVerifier
    generator.Generate(user,new(2026,1,1),new(2026,1,31),true,[task]);
    task.Images.Add(new(){TaskId=1,FilePath="verify.png",MimeType="image/png",FileSize=bytes.Length});
    generator.Generate(user,new(2026,1,1),new(2026,1,31),true,[task]);
+   // Regression: a long unbroken token must keep the one-column table within the page.
+   task.Description=new string('X',689)+"\nOddiy matn va o‘zbekcha harflar.";
+   var stress=generator.Generate(user,new(2026,1,1),new(2026,1,31),true,[task]);
+   using(var stressStream=new MemoryStream(stress))
+   using(var document=WordprocessingDocument.Open(stressStream,false))
+   {
+    var body=document.MainDocumentPart!.Document.Body!;
+    var section=body.Elements<SectionProperties>().Last();var size=section.GetFirstChild<PageSize>()!;var margins=section.GetFirstChild<PageMargin>()!;
+    var available=(long)size.Width!.Value-(margins.Left?.Value??1440)-(margins.Right?.Value??1440)-(margins.Gutter?.Value??0);
+    var table=body.Elements<Table>().Single();var props=table.GetFirstChild<TableProperties>()!;
+    if(props.TableLayout?.Type?.Value!=TableLayoutValues.Fixed||long.Parse(props.TableWidth!.Width!)!=available||long.Parse(table.GetFirstChild<TableGrid>()!.Elements<GridColumn>().Single().Width!)!=available)
+     throw new InvalidDataException("Report table exceeds page width");
+    var cell=table.Descendants<TableCell>().Single();
+    if(long.Parse(cell.TableCellProperties!.TableCellWidth!.Width!)!=available||cell.TableCellProperties.Elements<NoWrap>().Any()||cell.Elements<Paragraph>().First().ParagraphProperties?.WordWrap?.Val?.Value!=false||!cell.InnerText.Contains(new string('X',689)))
+     throw new InvalidDataException("Report long-token wrapping failed");
+   }
    Console.WriteLine("Package verified: SQLite migrations, PNG decoding, DOCX with/without image. No Telegram calls.");
   }
   finally{Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();Directory.Delete(temp,true);}

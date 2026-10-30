@@ -39,7 +39,22 @@ public sealed class WordReportGenerator(IOptions<BotOptions> options,FileChanges
    foreach(var p in main.ImageParts.ToList())main.DeletePart(p);
    var section=body.Elements<SectionProperties>().Last();
    foreach(var node in body.ChildElements.SkipWhile(x=>x!=signature).Skip(1).Where(x=>x!=section).ToList())node.Remove();
-   var table=body.Elements<Table>().Single();var sample=(TableRow)table.Elements<TableRow>().First().CloneNode(true);
+   var table=body.Elements<Table>().Single();
+   // A long unbroken word must not expand the template table beyond the page margins.
+   var pageSize=section.GetFirstChild<PageSize>()!;var pageMargin=section.GetFirstChild<PageMargin>()!;
+   var tableWidth=checked((int)((long)pageSize.Width!.Value-(pageMargin.Left?.Value??1440)-(pageMargin.Right?.Value??1440)-(pageMargin.Gutter?.Value??0)));
+   if(tableWidth<=0)throw new InvalidDataException("Template has no usable page width");
+   var tableProps=table.GetFirstChild<TableProperties>()??table.PrependChild(new TableProperties());
+   tableProps.TableWidth=new TableWidth{Width=tableWidth.ToString(System.Globalization.CultureInfo.InvariantCulture),Type=TableWidthUnitValues.Dxa};
+   tableProps.TableLayout=new TableLayout{Type=TableLayoutValues.Fixed};
+   tableProps.TableIndentation=new TableIndentation{Width=0,Type=TableWidthUnitValues.Dxa};
+   var grid=table.GetFirstChild<TableGrid>()??table.InsertAfter(new TableGrid(),tableProps);
+   grid.RemoveAllChildren();grid.Append(new GridColumn{Width=tableWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)});
+   var sample=(TableRow)table.Elements<TableRow>().First().CloneNode(true);
+   var sampleCell=sample.Elements<TableCell>().Single();
+   var cellProps=sampleCell.TableCellProperties??sampleCell.PrependChild(new TableCellProperties());
+   cellProps.TableCellWidth=new TableCellWidth{Width=tableWidth.ToString(System.Globalization.CultureInfo.InvariantCulture),Type=TableWidthUnitValues.Dxa};
+   cellProps.RemoveAllChildren<NoWrap>();
    table.RemoveAllChildren<TableRow>();
    // Restart existing Word numbering at 1 with a fresh instance, retaining the source list definition.
    var oldId=sample.Descendants<NumberingId>().FirstOrDefault()?.Val?.Value;
@@ -56,6 +71,9 @@ public sealed class WordReportGenerator(IOptions<BotOptions> options,FileChanges
    {
     index++;var row=(TableRow)sample.CloneNode(true);var cell=row.Elements<TableCell>().Single();var p=cell.Elements<Paragraph>().First();
     foreach(var extra in cell.Elements<Paragraph>().Skip(1).ToList())extra.Remove();
+    var paragraphProps=p.ParagraphProperties??p.PrependChild(new ParagraphProperties());
+    // In OOXML wordWrap=false permits a long word to break at character boundaries.
+    paragraphProps.WordWrap=new WordWrap{Val=false};
     SetText(p,(newId==null?$"{index}. ":"")+task.Description);
     if(newId!=null)foreach(var n in p.Descendants<NumberingId>())n.Val=newId;
     else p.ParagraphProperties?.RemoveAllChildren<NumberingProperties>();
